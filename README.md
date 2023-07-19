@@ -1,9 +1,11 @@
-# Composite filter
+# composite filter
 
 yet another composite filter, in Python
+
 <img src="docs/example.png">
 
 this filter encodes an input image to composite baseband according to BT.1700 (no blanking, no sync), and then decodes back to RGB.
+
 <img src="test_images/Pm5544_ntsc-2.png">
 <img src="test_images/Pm5544_ntsc-2_filt.png">
 
