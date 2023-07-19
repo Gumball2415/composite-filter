@@ -9,6 +9,9 @@ this filter encodes an input image to composite baseband according to BT.1700 (n
 <img src="test_images/Pm5544_ntsc-2.png">
 <img src="test_images/Pm5544_ntsc-2_filt.png">
 
+PM5544 test pattern taken from [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Pm5544_ntsc-2-.png).
+SMPTE color bars test pattern taken from [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:SMPTE_Color_Bars.svg).
+
 ## Requirements
 
 This script requires `numpy` for arrays and matrix math.
