@@ -39,7 +39,7 @@ parser.add_argument("-rsm", "--resolution-multiplier", type=int, help="multiply 
 
 args = parser.parse_args()
 
-fig = plt.figure(tight_layout=True, figsize=(20,11.25))
+fig = plt.figure(tight_layout=True, figsize=(10,5.625))
 
 # load image
 image = Image.open(args.input_image)
