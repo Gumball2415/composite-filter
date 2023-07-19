@@ -24,7 +24,7 @@ from PIL import Image
 
 parser=argparse.ArgumentParser(
     description="yet another composite filter",
-    epilog="version 0.0.0")
+    epilog="version 0.0.1")
 parser.add_argument("input_image", type=str, help="input image")
 parser.add_argument("-dbg", "--debug", action="store_true", help="enable debug plot")
 parser.add_argument("-skp", "--skip-plot", action="store_true", help="skip plot")
@@ -174,7 +174,7 @@ if args.debug:
     ax.set_title("Filtered image")
     ax.imshow(imageout)
     
-    active_scanline_buffer = active_scanline_buffer[:, (sample_pad):(YUV_buffer.shape[1] - sample_pad)]
+    active_scanline_buffer = active_scanline_buffer[:, (sample_pad):(active_scanline_buffer.shape[1] - sample_pad)]
     active_scanline_buffer -= luma_pedestal
     active_scanline_buffer /= 0.925
     ax_composite.set_title("Encoded composite image")

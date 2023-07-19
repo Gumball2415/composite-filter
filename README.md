@@ -51,7 +51,7 @@ options:
   -rsm RESOLUTION_MULTIPLIER, --resolution-multiplier RESOLUTION_MULTIPLIER
                         multiply the samplerate by x. makes the image sharper at the cost of filtering time
 
-version 0.0.0
+version 0.0.1
 ```
 
 ## License
