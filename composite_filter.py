@@ -137,8 +137,8 @@ print("quadrature amplitude demodulation...")
 for line in range(active_scanline_buffer.shape[-0]):
     for sample in range(active_scanline_buffer.shape[-1]):
         offset = (np.pi * int(bool(line % 4 & 0b10)))
-        YUV_buffer[line, sample, 1] = chroma_buffer[line, sample] * np.sin(timepoint(sample - sample_pad, offset))
-        YUV_buffer[line, sample, 2] = chroma_buffer[line, sample] * np.cos(timepoint(sample - sample_pad, offset))
+        YUV_buffer[line, sample, 1] = chroma_buffer[line, sample] * np.sin(timepoint(sample - sample_pad, offset)) * 2
+        YUV_buffer[line, sample, 2] = chroma_buffer[line, sample] * np.cos(timepoint(sample - sample_pad, offset)) * 2
 
 print("normalizing luma...")
 YUV_buffer[:, :, 0] -= luma_pedestal
@@ -146,8 +146,8 @@ YUV_buffer[:, :, 0] /= 0.925
 
 print("normalizing and filtering chroma...")
 b_chroma, a_chroma = signal.butter(3, raster_subcarrier_freq, 'low', fs=raster_samplerate, analog=False)
-YUV_buffer[:, :, 1] = signal.filtfilt(b_chroma, a_chroma, YUV_buffer[:, :, 1]) * 2
-YUV_buffer[:, :, 2] = signal.filtfilt(b_chroma, a_chroma, YUV_buffer[:, :, 2]) * 2
+YUV_buffer[:, :, 1] = signal.filtfilt(b_chroma, a_chroma, YUV_buffer[:, :, 1])
+YUV_buffer[:, :, 2] = signal.filtfilt(b_chroma, a_chroma, YUV_buffer[:, :, 2])
 
 print("converting YUV to RGB...")
 YUV_buffer = YUV_buffer[:, (sample_pad):(YUV_buffer.shape[1] - sample_pad), :]
