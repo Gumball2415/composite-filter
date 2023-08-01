@@ -24,7 +24,7 @@ from PIL import Image
 
 parser=argparse.ArgumentParser(
     description="yet another composite filter",
-    epilog="version 0.0.1")
+    epilog="version 0.0.2")
 parser.add_argument("input_image", type=str, help="input image")
 parser.add_argument("-dbg", "--debug", action="store_true", help="enable debug plot")
 parser.add_argument("-skp", "--skip-plot", action="store_true", help="skip plot")
@@ -60,7 +60,7 @@ if args.wide_aspect_ratio:
     raster_h_res = 960 * args.resolution_multiplier
     raster_frontporch_length = 21.5 * args.resolution_multiplier
 elif args.input_resolution_samplerate and (image.size[0] > 720):
-    raster_h_res = image.size[0]
+    raster_h_res = image.size[0] * 2
     raster_frontporch_length = np.around(raster_h_res / 44.6512 * 2) / 2 * args.resolution_multiplier
 else:
     raster_h_res = 720 * args.resolution_multiplier
