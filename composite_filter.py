@@ -24,18 +24,19 @@ from PIL import Image
 
 parser=argparse.ArgumentParser(
     description="yet another composite filter",
-    epilog="version 0.0.2")
+    epilog="version 0.1.0")
 parser.add_argument("input_image", type=str, help="input image")
 parser.add_argument("-dbg", "--debug", action="store_true", help="enable debug plot")
 parser.add_argument("-skp", "--skip-plot", action="store_true", help="skip plot")
 parser.add_argument("-nnv", "--neigbor-vertical", action="store_true", help="use nearest-neighbor scaling for vertical resolution")
-parser.add_argument("-pfd", "--prefilter-disable", action="store_true", help="disable image lowpassiing before encoding to composite")
+parser.add_argument("-pfd", "--prefilter-enable", action="store_true", help="enable luma lowpassing before encoding to composite")
 parser.add_argument("-prg", "--progressive", action="store_true", help="scale to 240 lines instead of 480")
 parser.add_argument("-isf", "--interlace-separate-frames", action="store_true", help="output one file per field")
 parser.add_argument("-irs", "--input-resolution-samplerate", action="store_true", help="use the image input's horizontal resolution as samplerate. minimum is 720 pixels")
 parser.add_argument("-war", "--wide-aspect-ratio", action="store_true", help="use wide aspect ratio for output")
 parser.add_argument("-pic", "--phase-invert-colorburst", action="store_true", help="invert phase of colorburst")
 parser.add_argument("-rsm", "--resolution-multiplier", type=int, help="multiply the samplerate by x. makes the image sharper at the cost of filtering time", default=2)
+parser.add_argument("-com", "--comb-filter", action="store_true", help="filter using 1d comb filter")
 
 args = parser.parse_args()
 
@@ -77,8 +78,8 @@ raster_href_start = raster_blanking_portion_length - raster_frontporch_length
 # this switches the x and y axis, but that's ok
 # it'll switch back when we convert back to an image
 if args.progressive:
-    image = image.resize((image.size[0], raster_v_res/2), resample=Image.Resampling.NEAREST if args.neigbor_vertical else Image.Resampling.LANCZOS)
-    image = image.resize((raster_h_res, raster_v_res/2), resample=Image.Resampling.LANCZOS)
+    image = image.resize((image.size[0], int(raster_v_res/2)), resample=Image.Resampling.NEAREST if args.neigbor_vertical else Image.Resampling.LANCZOS)
+    image = image.resize((raster_h_res, int(raster_v_res/2)), resample=Image.Resampling.LANCZOS)
     image = image.resize((raster_h_res, raster_v_res), resample=Image.Resampling.NEAREST)
 else:
     image = image.resize((image.size[0], raster_v_res), resample=Image.Resampling.NEAREST if args.neigbor_vertical else Image.Resampling.LANCZOS)
@@ -94,16 +95,16 @@ image_arr_copy = image_arr
 print("converting RGB to YUV...")
 image_arr = np.einsum('ij,klj->kli',RGB_to_YUV,image_arr, dtype=np.float64)
 
-if not args.prefilter_disable:
-    print("bandlimiting luma...")
-    b_luma, a_luma = signal.butter(2, raster_subcarrier_freq, 'low', fs=raster_samplerate, analog=False)
-    image_arr[..., 0] = signal.filtfilt(b_luma, a_luma, image_arr[..., 0])
+chroma_N, chroma_Wn = signal.buttord(1300000, 3600000, 2, 20, fs=raster_samplerate, analog=False)
+b_chroma, a_chroma = signal.butter(chroma_N, chroma_Wn, 'low', fs=raster_samplerate, analog=False)
 
-    print("bandlimiting chroma according to SMPTE 170M-2004...")
-    chroma_N, chroma_Wn = signal.buttord(1300000, 3600000, 2, 20, fs=raster_samplerate, analog=False)
-    b_chroma, a_chroma = signal.butter(chroma_N, chroma_Wn, 'low', fs=raster_samplerate, analog=False)
-    image_arr[..., 1] = signal.filtfilt(b_chroma, a_chroma, image_arr[..., 1])
-    image_arr[..., 2] = signal.filtfilt(b_chroma, a_chroma, image_arr[..., 2])
+if args.prefilter_enable:
+    print("bandlimiting luma...")
+    image_arr[..., 0] = signal.filtfilt(b_chroma, a_chroma, image_arr[..., 0])
+
+print("bandlimiting chroma according to SMPTE 170M-2004...")
+image_arr[..., 1] = signal.filtfilt(b_chroma, a_chroma, image_arr[..., 1])
+image_arr[..., 2] = signal.filtfilt(b_chroma, a_chroma, image_arr[..., 2])
 
 luma_pedestal = 7.5
 active_scanline_buffer = np.empty([raster_v_res, raster_h_res], np.float64)
@@ -113,41 +114,58 @@ active_scanline_buffer = np.pad(active_scanline_buffer, ((0, 0), (sample_pad, sa
 
 print("encoding to composite signal...")
 timepoint = lambda s, o: o + (2*np.pi*raster_subcarrier_freq*(((s + raster_href_start + 0.5)/raster_samplerate))) + (np.pi * int(args.phase_invert_colorburst))
-for line in range(active_scanline_buffer.shape[-0]):
+for line in range(active_scanline_buffer.shape[0]):
     for sample in range(raster_h_res):
         offset = (np.pi * int(bool(line % 4 & 0b10)))
         active_scanline_buffer[line, (sample + sample_pad)] = (0.925*image_arr[line, sample, 0] + luma_pedestal
-            + image_arr[line, sample, 1] * np.sin(timepoint(sample, offset))
-            + image_arr[line, sample, 2] * np.cos(timepoint(sample, offset)))
+            + (0.925*image_arr[line, sample, 1] * np.sin(timepoint(sample, offset)))
+            + (0.925*image_arr[line, sample, 2] * np.cos(timepoint(sample, offset)))
+        )
 
 YUV_buffer = np.empty((active_scanline_buffer.shape[0], active_scanline_buffer.shape[1], 3), np.float64)
 
 # set up filters
-q_factor = 1    # any lower than 1 and it'll become unstable
-
-print("seperating luma bandwidth...")
-b_notch, a_notch = signal.iirnotch(raster_subcarrier_freq, q_factor, raster_samplerate)
-YUV_buffer[:, :, 0] = signal.filtfilt(b_notch, a_notch, active_scanline_buffer)
+q_factor = 0.5    # any lower than 1 and it'll become unstable
 
 print("seperating chroma bandwidth...")
-b_peak, a_peak = signal.iirpeak(raster_subcarrier_freq, q_factor, raster_samplerate)
-chroma_buffer = signal.filtfilt(b_peak, a_peak, active_scanline_buffer)
+if (args.comb_filter):
+    # the entire buffer has both fields in it, so skip every other line so we can comb filter the same field's previous line
+    chroma_buffer = np.empty((active_scanline_buffer.shape[0], active_scanline_buffer.shape[1]), np.float64)
+    for line in range(active_scanline_buffer.shape[-0]):
+        if (line < 2):
+            chroma_buffer[line, :] = (active_scanline_buffer[line, :] - luma_pedestal) / 2
+        else:
+            chroma_buffer[line, :] = (active_scanline_buffer[line, :] - active_scanline_buffer[line - 2, :]) / 2
+else:
+    b_peak, a_peak = signal.iirpeak(raster_subcarrier_freq, q_factor, raster_samplerate)
+    chroma_buffer = signal.filtfilt(b_peak, a_peak, active_scanline_buffer)
+
+print("seperating luma bandwidth...")
+
+YUV_buffer[:, :, 0] = active_scanline_buffer - chroma_buffer
+if (args.comb_filter):
+    b_notch, a_notch = signal.iirnotch(raster_subcarrier_freq, q_factor, raster_samplerate)
+    YUV_buffer[:, :, 0] = signal.filtfilt(b_notch, a_notch, YUV_buffer[:, :, 0])
+
+
+print("normalizing luma and chroma...")
+YUV_buffer[:, :, :] -= luma_pedestal
+YUV_buffer /= 0.925
 
 print("quadrature amplitude demodulation...")
 for line in range(active_scanline_buffer.shape[-0]):
     for sample in range(active_scanline_buffer.shape[-1]):
         offset = (np.pi * int(bool(line % 4 & 0b10)))
-        YUV_buffer[line, sample, 1] = chroma_buffer[line, sample] * np.sin(timepoint(sample - sample_pad, offset)) * 2
-        YUV_buffer[line, sample, 2] = chroma_buffer[line, sample] * np.cos(timepoint(sample - sample_pad, offset)) * 2
+        YUV_buffer[line, sample, 1] = (chroma_buffer[line, sample]) * np.sin(timepoint(sample - sample_pad, offset)) * 2
+        YUV_buffer[line, sample, 2] = (chroma_buffer[line, sample]) * np.cos(timepoint(sample - sample_pad, offset)) * 2
 
-print("normalizing luma...")
-YUV_buffer[:, :, 0] -= luma_pedestal
-YUV_buffer[:, :, 0] /= 0.925
-
-print("normalizing and filtering chroma...")
-b_chroma, a_chroma = signal.butter(3, raster_subcarrier_freq, 'low', fs=raster_samplerate, analog=False)
-YUV_buffer[:, :, 1] = signal.filtfilt(b_chroma, a_chroma, YUV_buffer[:, :, 1])
-YUV_buffer[:, :, 2] = signal.filtfilt(b_chroma, a_chroma, YUV_buffer[:, :, 2])
+print("filtering chroma...")
+# chroma_N, chroma_Wn = signal.buttord(raster_subcarrier_freq-2000000, raster_subcarrier_freq, 3, 90, fs=raster_samplerate, analog=False)
+# b_chroma, a_chroma = signal.butter(chroma_N, chroma_Wn, 'low', fs=raster_samplerate, analog=False)
+# YUV_buffer[:, :, 1] = signal.filtfilt(b_chroma, a_chroma, YUV_buffer[:, :, 1] * 2)
+# YUV_buffer[:, :, 2] = signal.filtfilt(b_chroma, a_chroma, YUV_buffer[:, :, 2] * 2)
+YUV_buffer[..., 1] = signal.filtfilt(b_chroma, a_chroma, YUV_buffer[..., 1])
+YUV_buffer[..., 2] = signal.filtfilt(b_chroma, a_chroma, YUV_buffer[..., 2])
 
 print("converting YUV to RGB...")
 YUV_buffer = YUV_buffer[:, (sample_pad):(YUV_buffer.shape[1] - sample_pad), :]
@@ -186,7 +204,7 @@ if args.debug:
     chroma_plot_buffer = np.dstack((np.full((YUV_buffer.shape[0], YUV_buffer.shape[1]), 0.5), YUV_buffer[...,1], YUV_buffer[...,2]))
     chroma_plot_buffer = np.einsum('ij,klj->kli', np.linalg.inv(RGB_to_YUV), chroma_plot_buffer, dtype=np.float64)
     ax_chroma.set_title("Decoded chroma image")
-    ax_chroma.imshow(chroma_plot_buffer)
+    ax_chroma.imshow(chroma_plot_buffer, cmap='gray')
     plt.savefig("docs/example.png", dpi=96)
 else:
     ax = fig.add_subplot()
