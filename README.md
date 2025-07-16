@@ -2,6 +2,8 @@
 
 yet another composite filter, in Python
 
+This has been moved to [pencil-case/composite-filter](https://github.com/Gumball2415/pencil-case/tree/main/composite-filter)!
+
 <img src="docs/example.png">
 
 this filter encodes an input image to composite baseband according to BT.1700 (no blanking, no sync), and then decodes back to RGB.
